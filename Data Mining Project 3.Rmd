@@ -1,0 +1,174 @@
+---
+title: "Data Mining Project 3"
+author: "Joe Nemeczky"
+date: "11/15/2022"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r}
+library(tidyverse)  
+library(cluster)    
+library(factoextra)
+library(caret)
+library(dbscan)
+```
+
+```{r}
+Cereal0 <-  read.csv("/Users/joenemeczky/Downloads/cereals.CSV")
+Cereal0$Sugars[is.na(Cereal0$Sugars)] <- mean(Cereal0$Sugars, na.rm = TRUE)
+Cereal0$Carbo[is.na(Cereal0$Carbo)] <- mean(Cereal0$Carbo, na.rm = TRUE)
+Cereal0$Potass[is.na(Cereal0$Potass)] <- mean(Cereal0$Potass, na.rm = TRUE)
+Cereal_minmax <- predict(preProcess(Cereal0, method=c("range")), Cereal0) 
+CerealFinal <- subset(Cereal_minmax, select = -c(1,2,3,16))
+rownames(CerealFinal) <- Cereal_minmax[,1]
+```
+
+
+
+Question 1.
+
+```{r}
+fviz_nbclust(CerealFinal, kmeans, method = "silhouette")
+#The silhouette method shows that the optimal number of cluster for kmeans is 5
+```
+
+```{r}
+fviz_nbclust(CerealFinal, FUN = hcut, method = "silhouette")
+#The silhouette method shows that the optimal number of cluster for complete linkage agglomerative hierarchical clustering is 5
+```
+
+```{r}
+hc3 <- hcut(CerealFinal, k = 12, hc_func = c("hclust"), hc_method = "ward.D", hc_metric = "euclidean", stand = TRUE)
+fviz_silhouette(hc3)
+#I decided that 12 was the best number of clusters for Ward's method of agglomerative hierarchical clustering. While it is possible to get a higher average silhouette width, it is mostly because the average is skewed by clusters that only have 2 or 3 points in them. At 12 clusters there is a high average silhouette width and most of the clusters have a higher amount of points. 
+```
+
+
+```{r}
+DBScan_Cereal <-  dbscan(CerealFinal, eps = 0.7, minPts = 4)
+sil.dbscan <- silhouette(DBScan_Cereal$cluster, dist(CerealFinal))
+summary(sil.dbscan)
+DBScan_Cereal$cluster
+cluster <- sil.dbscan[,1]
+sil_width <- sil.dbscan[,3]
+avg_sil_width <- data.frame(cluster, sil_width) %>%
+  group_by(cluster) %>%
+  summarize(mean_sil_width = mean(sil_width)) %>%
+  summarize(total_sil_score = mean(mean_sil_width)) %>%
+  as.numeric()
+avg_sil_width
+
+#For DBSCAN I decided that the best number of clusters was 4. When adjusting the numbers for epsilon and min points, the highest average silhouette width I was able to find was with an epsilon of 0.7 and a min points of 4. While there are still points categorized as noise points that were not put in a cluster, I think this was the best settings because a good amount of the points are still put into clusters and the average silhouette width is high. 
+```
+
+
+
+
+
+Question 2.
+```{r}
+d <- dist(CerealFinal, method = "euclidean")
+```
+
+
+```{r}
+hc1 <- hclust(d, method = "complete")
+sub_grp1 <- cutree(hc1, k = 5)
+plot(hc1, cex = 0.6)
+rect.hclust(hc1, k = 5, border = 2:5)
+#Complete Linkage Visualization
+```
+
+```{r}
+hc3 <- hclust(d, method = "ward.D")
+sub_grp2 <- cutree(hc3, k = 12)
+plot(hc3, cex = 0.6)
+rect.hclust(hc3, k = 12, border = 2:5)
+#Ward's method visualization
+```
+
+
+```{r}
+k5 <- kmeans(CerealFinal, centers = 5,  nstart = 25) 
+fviz_cluster(k5,data=CerealFinal)
+fviz_cluster(k5,data=CerealFinal, ggtheme = theme_bw(), repel = T)
+
+#KMeans Visualization
+```
+
+```{r}
+
+
+fviz_cluster(DBScan_Cereal,data=CerealFinal)
+fviz_cluster(DBScan_Cereal,data=CerealFinal, ggtheme = theme_bw(), repel = T, outlier.labelsize = 0, outlier.pointsize = 0.25)
+
+#DBSCAN Visualization
+```
+
+
+Question 3.
+
+```{r}
+KmeanDF <- cbind(CerealFinal, k5$cluster)
+DBSCANDF <- cbind(CerealFinal, DBScan_Cereal$cluster)
+CompleteDF <- cbind(CerealFinal, sub_grp1)
+WardsDF <- cbind(CerealFinal, sub_grp2)
+#Creating dataframes needed for summary statistics
+```
+
+```{r}
+KmeanDF %>% group_by(k5$cluster) %>% summarise_if(is.numeric, mean, na.rm = TRUE)
+```
+
+KMeans:
+Cluster 1: High calorie, high sugar, high vitamins. Overall this is cluster contains most of the cereal with fruits.
+Cluster 2: These cereals are somewhere in the middle for all of the categories, slightly high sugar. Contains variety of cereals with mostly cereals containing oats and nuts. 
+Cluster 3: High calorie, high carb, high sodium. Overall this is cluster contains most of the Chex cereals.
+Cluster 4: Low calorie, low fat, low sodium, high fiber, low sugar. Overall would be classified as healthier cereals.
+Cluster 5: High calorie, high sugar, high sodium, low fiber. Overall this cluster contains mostly unhealthy and sugary cereals
+
+
+```{r}
+DBSCANDF %>% group_by(DBScan_Cereal$cluster) %>% summarise_if(is.numeric, mean, na.rm = TRUE)
+```
+
+DBSCAN:
+Cluster 1: All General Mills cereals
+Cluster 2: All Kellogg's cereals
+Cluster 3: Does not contain only one cereal, has high protein, fiber and potassium, has average other statistics 
+Cluster 4: All Nabisco cereals
+
+```{r}
+CompleteDF %>% group_by(sub_grp1) %>% summarise_if(is.numeric, mean, na.rm = TRUE)
+```
+Complete Linkage:
+Cluster 1: Low calories, fat, and sugar, high fiber, protein and potassium, would be classified as healthier cereals
+Cluster 2: All Quaker cereals except for one
+Cluster 3: Mostly General Mills cereals, with some Ralston. Unhealthy cereals with high calories, sugars and fat
+Cluster 4: Almost all Kellogg's cereals, also unhealthy with high sugars and calories.
+Cluster 5: Mix of Ralston and Nabisco, low fat but very high carbs.
+
+```{r}
+WardsDF %>% group_by(sub_grp2) %>% summarise_if(is.numeric, mean, na.rm = TRUE)
+```
+
+Cluster 1: Low calorie, fat and carbs, very high protein and fiber, Bran cereals
+Cluster 2: All Quaker cereals
+Cluster 3: All Ralston cereals
+Cluster 4: All General Mills cereals
+Cluster 5: Mostly Kellogg's cereals, low fat, fiber, and potassium, very high sugar
+Cluster 6: Nothing defining about this group, somewhere in the middle for stats and contain different brands and types of cereals
+Cluster 7: Mostly Kellogg's cereals, very low fat and sugar, high sodium and carbs
+Cluster 8: Low sodium, fiber, and vitamins, high protein and carbs
+Cluster 9: Mostly Kellogg's cereals, very high calorie, sugar, and sodium
+Cluster 10: Low fat and fiber, contain all the cereals with 100% of daily recommended vitamins
+Cluster 11: All Quaker cereals, both 0 calories and puffed cereals
+Cluster 12: All Nabisco cereals, all some variation of shredded wheat cereal
+
+
+4.
+Only complete linkage and KMeans produced the same optimal number of clusters. This could be because these are the only clustering methods where the silhouette method gives an exact number of clusters, whereas the other methods I had to adjust numbers and pick my own optimal number of clusters based on the outputs given. Across all of the algorithms, most of them had clusters that contained all of one brand. This could be because many brands produce cereals that are similar but are just variations of eachother. One thing that was different was in the Wards clustering it grouped all of the cereals with a value of 1 for the vitamins together, which did not happen in any other clustering. Another interesting thing with wards clustering was that it broke apart different brands into separate groups and only put the similar cereals together. For example, Quaker cereals were in both cluster 2 and cluster 11, however 11 only contained puffed cereals and cluster 2 contained the rest of the Quaker cereals. Some of the clustering algorithms did produce the same clusters, Cluster 3 in Wards and cluster 5 in Kmeans were the same. Also cluster 1 for both Wards and Complete linkage were the same. 
+
+
